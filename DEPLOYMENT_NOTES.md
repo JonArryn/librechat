@@ -11,8 +11,10 @@ stack breaks again.
   `nginx` `client` service, which is commented out in `deploy-compose.yml`.
   Caddy handles automatic HTTPS via Let's Encrypt.
 - Domains: `lorcanium.net` → `api` (LibreChat), `admin.lorcanium.net` → `admin-panel`.
-- `librechat.yaml` is gitignored — not tracked here, lives only on the droplet/local
-  checkout. Custom endpoint (`OpenRouter`) and `modelSpecs`/`interface` config live there.
+- `librechat.yaml` is tracked in git (unignored in this fork — see "Git
+  remotes & workflow" below). It contains no secrets: the custom `OpenRouter`
+  endpoint uses `apiKey: '${OPENROUTER_KEY}'` env-var interpolation, resolved
+  from `.env` at runtime, never committed.
 - Droplet: `ubuntu-s-2vcpu-2gb-nyc1` — **2GB RAM**, tight for this full stack
   (Mongo + Meilisearch + pgvector + rag_api + api + admin-panel + Caddy). Watch
   for OOM kills if containers disappear from `docker compose ps` unexpectedly
@@ -82,6 +84,55 @@ previous layer:
 - `icon URL` for a modelSpec must point at an actual image file, not a
   webpage — a broken image load renders a red alert-circle badge on the spec
   icon (`client/src/components/Endpoints/URLIcon.tsx`).
+
+## Git remotes & workflow
+
+This checkout is a personal fork-with-customizations setup, not a plain clone
+of upstream:
+
+- **`origin`** → `https://github.com/JonArryn/librechat.git` (my own fork).
+  `main` tracks `origin/main`. This is where deploy configs
+  (`deploy-compose.yml`, `Caddyfile`, `librechat.yaml`, this file) get pushed.
+- **`upstream`** → `https://github.com/danny-avila/LibreChat.git` (the
+  original project). Only used to pull in new LibreChat app releases —
+  never pushed to.
+
+**Pushing a local config change (laptop → my fork):**
+```bash
+git add deploy-compose.yml Caddyfile librechat.yaml
+git commit -m "..."
+git push origin main
+```
+
+**Pulling my own config changes down to the droplet** (replaces scp for
+`deploy-compose.yml` / `Caddyfile` / `librechat.yaml`):
+```bash
+# One-time, if the droplet checkout still points at upstream:
+git remote set-url origin https://github.com/JonArryn/librechat.git
+# Every time after that:
+git pull origin main
+```
+`.env` is intentionally never in git (secrets) — keep scp'ing that one file
+separately, forever.
+
+**Pulling upstream LibreChat app updates into my fork:**
+```bash
+git fetch upstream
+git merge upstream/main        # or: git rebase upstream/main
+# resolve conflicts if upstream touches deploy-compose.yml/librechat.yaml
+git push origin main
+```
+Then `git pull origin main` on the droplet as usual to get the new app
+version alongside the existing configs.
+
+**`.gitignore` note:** upstream's `.gitignore` blanket-ignores `librechat.yaml`
+and `.env*` (most users hardcode secrets directly in `librechat.yaml`, which
+this config avoids by using `${VAR}` interpolation instead). To track
+`librechat.yaml` in my fork, its two lines were removed from `.gitignore`
+rather than force-adding around the rule, so normal `git add`/`git status`
+picks up future edits to it like any other tracked file. When editing
+`.gitignore`, double-check the `.env*` glob stays a wildcard — narrowing it to
+literal `.env` would stop ignoring variants like `.env.local`/`.env.production`.
 
 ## General troubleshooting method (useful beyond this incident)
 
