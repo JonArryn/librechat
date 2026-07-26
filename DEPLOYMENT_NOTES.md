@@ -23,6 +23,28 @@
 **Problem:** API crash-looped on boot; Caddy showed `connection refused`.
 **Solution:** The proxy error is a symptom, not the cause — check `docker compose logs api` directly instead of Caddy's logs.
 
+## Cloudflare + firewall (only accept Cloudflare IPs)
+
+**Problem:** After restricting the DO Cloud Firewall to Cloudflare's published IP ranges (ports 80/443), the site became unreachable in browsers (`ERR_CONNECTION_RESET`), even though the DO firewall rules and DNS proxy status (orange cloud) were both correct.
+**Solution:** Check Cloudflare SSL/TLS mode first. Caddy here is configured with a **Cloudflare Origin CA certificate** (`tls /etc/ssl/cloudflare/origin.pem ...`), which is only used when Cloudflare connects to the origin over HTTPS. That requires SSL/TLS mode **Full** or **Full (strict)** — not Flexible. Flexible connects to the origin over plain HTTP, clashing with Caddy's automatic HTTP→HTTPS redirect and producing broken/reset connections that look like a firewall problem but aren't. Prefer **Full (strict)** since it actually validates the origin cert.
+
+**Problem:** Caddy sees Cloudflare's edge IP as the client for every request (breaks real-IP-based logging/rate-limiting).
+**Solution:** Add a global `trusted_proxies` option so Caddy unwraps the real visitor IP from `X-Forwarded-For`/`CF-Connecting-IP`. There is no built-in `cloudflare` source module — hardcode Cloudflare's current CIDR ranges (https://www.cloudflare.com/ips/) with `static`, and re-sync periodically since they change occasionally:
+```
+{
+    servers {
+        trusted_proxies static <cloudflare CIDR ranges...>
+        trusted_proxies_strict
+    }
+}
+```
+
+**Problem:** After a Caddyfile/compose change, `docker compose exec caddy caddy reload` doesn't pick up a new **volume mount** added to `deploy-compose.yml` (e.g. mounting the origin cert directory).
+**Solution:** `reload` only re-reads the Caddyfile inside the already-running container. A changed volume mount requires recreating the container: `docker compose -f deploy-compose.yml up -d caddy`.
+
+**Problem:** Looked like the browser couldn't reach the site at all, unrelated to the above.
+**Solution:** Turned out to be stale DNS caching at a layer between the browser and Cloudflare's public DNS (home router, and separately a VPN's DNS resolver) — both were serving a cached pre-Cloudflare A record pointing straight at the origin, which the firewall correctly rejected. Confirmed via `dig +short <domain> @1.1.1.1` (correct) vs. plain `dig +short <domain>` (stale/wrong) from the affected device. Fix: flush the OS DNS cache (`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` on macOS), or bypass the stale resolver entirely by setting the device/router DNS to `1.1.1.1`/`8.8.8.8`. Not a firewall or Caddy issue — don't waste time re-checking those once public-resolver DNS is confirmed correct.
+
 ## librechat.yaml
 
 **Problem:** Custom endpoint config rejected at boot (`ZodError` on `endpointType`).
