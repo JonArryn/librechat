@@ -1,0 +1,7 @@
+lorcanium.net {
+    reverse_proxy api:3080
+}
+
+admin.lorcanium.net {
+    reverse_proxy admin-panel:3000
+}
