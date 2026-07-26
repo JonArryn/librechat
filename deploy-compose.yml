@@ -64,6 +64,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+      - /etc/ssl/cloudflare:/etc/ssl/cloudflare:ro
+
 
   # client:
   #   image: nginx:1.27.0-alpine
