@@ -23,6 +23,9 @@
 **Problem:** API crash-looped on boot; Caddy showed `connection refused`.
 **Solution:** The proxy error is a symptom, not the cause — check `docker compose logs api` directly instead of Caddy's logs.
 
+**Problem:** Cloudflare 521 (origin down); `caddy` was missing entirely from `docker compose ps`, and `chat-mongodb`/`chat-meilisearch`/`LibreChat-API` were all crash-looping with permission errors (`EACCES`, WiredTiger metadata read failures).
+**Solution:** A bare `docker compose up`/`down` (no `-f`) had been run after uploading a new `.env`. Without `-f`, Compose silently falls back to LibreChat's bundled `docker-compose.yml` + `docker-compose.override.yml` — a completely different stack that has no `caddy` service and runs `mongodb`/`meilisearch` as `user: "${UID}:${GID}"` (host user, e.g. `1000:1000`), which doesn't match the root/`999`-owned data directories the production stack expects. Always target the deploy file explicitly (`docker compose -f deploy-compose.yml ...`), or use the `npm run start:deployed` / `stop:deployed` / `rebuild:deployed` scripts, which hardcode `-f deploy-compose.yml` so this can't happen again.
+
 ## Cloudflare + firewall (only accept Cloudflare IPs)
 
 **Problem:** After restricting the DO Cloud Firewall to Cloudflare's published IP ranges (ports 80/443), the site became unreachable in browsers (`ERR_CONNECTION_RESET`), even though the DO firewall rules and DNS proxy status (orange cloud) were both correct.
